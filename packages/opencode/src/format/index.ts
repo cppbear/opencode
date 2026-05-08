@@ -43,7 +43,8 @@ const layer = Layer.effect(
         async function getCommand(item: Formatter.Info) {
           let cmd = commands[item.name]
           if (cmd === false || cmd === undefined) {
-            cmd = await item.enabled({ ...ctx, experimentalOxfmt: flags.experimentalOxfmt })
+            const next = await item.enabled({ ...ctx, experimentalOxfmt: flags.experimentalOxfmt })
+            cmd = next !== false && !Array.isArray(next) ? false : next
             commands[item.name] = cmd
           }
           return cmd
@@ -66,7 +67,7 @@ const layer = Layer.effect(
             }),
           )
           return checks
-            .filter((x): x is { item: Formatter.Info; cmd: string[] } => x.cmd !== false)
+            .filter((x): x is { item: Formatter.Info; cmd: string[] } => Array.isArray(x.cmd))
             .map((x) => ({ item: x.item, cmd: x.cmd }))
         }
 

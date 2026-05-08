@@ -12,7 +12,9 @@ import { which } from "@opencode-ai/core/util/which"
 import { Module } from "@opencode-ai/core/util/module"
 import { spawn } from "./launch"
 import { Npm } from "@opencode-ai/core/npm"
+import { Effect } from "effect"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
+import { findCangjieTool } from "@/cangjie/toolchain"
 
 const pathExists = async (p: string) =>
   fs
@@ -1978,6 +1980,29 @@ export const JuliaLS: Info = {
       process: spawn(julia, ["--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"], {
         cwd: root,
       }),
+    }
+  },
+}
+
+export const Cangjie: Info = {
+  id: "cangjie",
+  extensions: [".cj"],
+  root: NearestRoot(["cjpm.toml"]),
+  async spawn(root) {
+    const match = await findCangjieTool("LSPServer")
+    if (!match) {
+      return
+    }
+
+    const proc = spawn(match.bin, ["--stdio"], {
+      cwd: root,
+      env: match.env,
+    })
+    proc.on("error", (err) => {
+      Effect.runSync(Effect.logError("Failed to start Cangjie LSPServer", { error: err.message, bin: match.bin }))
+    })
+    return {
+      process: proc,
     }
   },
 }

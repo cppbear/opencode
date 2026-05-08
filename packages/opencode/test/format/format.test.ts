@@ -108,6 +108,41 @@ describe("Format", () => {
     { config: { formatter: false } },
   )
 
+  it.instance(
+    "file() skips invalid formatter command results",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const file = `${test.directory}/test.invalid-command`
+        yield* Effect.promise(() => Bun.write(file, "x"))
+
+        const original = {
+          extensions: Formatter.gofmt.extensions,
+          enabled: Formatter.gofmt.enabled,
+        }
+
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            Formatter.gofmt.extensions = [".invalid-command"]
+            Formatter.gofmt.enabled = async () => undefined as any
+          }),
+          () =>
+            Format.Service.use((fmt) =>
+              Effect.gen(function* () {
+                yield* fmt.init()
+                expect(yield* fmt.file(file)).toBe(false)
+              }),
+            ),
+          () =>
+            Effect.sync(() => {
+              Formatter.gofmt.extensions = original.extensions
+              Formatter.gofmt.enabled = original.enabled
+            }),
+        )
+      }),
+    { config: { formatter: { gofmt: {} } } },
+  )
+
   testEffect(
     Layer.mergeAll(
       LayerNode.compile(LayerNode.group([Format.node, CrossSpawnSpawner.node])),
