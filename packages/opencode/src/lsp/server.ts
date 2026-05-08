@@ -1991,9 +1991,25 @@ export const Cangjie: Info = {
   async spawn(root) {
     const match = await findCangjieTool("LSPServer")
     if (!match) {
+      Effect.runSync(
+        Effect.logInfo("Cangjie LSPServer not found", {
+          searched: ["PATH", "CANGJIE_HOME", "CANGJIE_SDK_HOME", "~/.cangjie-sdk/*/cangjie", "~/.local/cangjie"],
+        }),
+      )
       return
     }
 
+    Effect.runSync(
+      Effect.logInfo("selected Cangjie LSPServer", {
+        bin: match.bin,
+        source: match.source,
+        root: match.root,
+        home: match.home,
+        envsetup: match.envsetup,
+        runtimeDir: match.runtimeDir,
+        workspace: root,
+      }),
+    )
     const proc = spawn(match.bin, ["--stdio"], {
       cwd: root,
       env: match.env,
@@ -2003,6 +2019,9 @@ export const Cangjie: Info = {
     })
     return {
       process: proc,
+      initialization: {
+        modulesHomeOption: match.home,
+      },
     }
   },
 }
