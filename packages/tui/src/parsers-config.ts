@@ -382,5 +382,15 @@ export default {
         ],
       },
     },
+    {
+      filetype: "cangjie",
+      wasm: "https://github.com/SunriseSummer/CangjieTreeSitter/releases/download/1.0.5.4/tree-sitter-cangjie.wasm",
+      queries: {
+        highlights: [
+          "https://github.com/SunriseSummer/CangjieTreeSitter/releases/download/1.0.5.4/highlights.scm",
+        ],
+        locals: ["https://github.com/SunriseSummer/CangjieTreeSitter/releases/download/1.0.5.4/locals.scm"],
+      },
+    },
   ],
 }

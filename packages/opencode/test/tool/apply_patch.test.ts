@@ -13,6 +13,7 @@ import { Truncate } from "@/tool/truncate"
 import { TestInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
+import * as Formatter from "../../src/format/formatter"
 
 const it = testEffect(
   LayerNode.compile(
@@ -256,6 +257,43 @@ describe("tool.apply_patch freeform", () => {
       expect(contents.endsWith("\n")).toBe(true)
       expect(contents).toBe("first line\nsecond line\n")
     }),
+  )
+
+  it.instance(
+    "applies .cj patch when formatter command result is invalid",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx } = makeCtx()
+        const original = {
+          extensions: Formatter.cjfmt.extensions,
+          enabled: Formatter.cjfmt.enabled,
+        }
+
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            Formatter.cjfmt.extensions = [".cj"]
+            Formatter.cjfmt.enabled = async () => undefined as any
+          }),
+          () =>
+            Effect.gen(function* () {
+              const target = path.join(test.directory, "main.cj")
+              yield* writeText(target, "let value = 1\n")
+
+              const patchText = "*** Begin Patch\n*** Update File: main.cj\n@@\n-let value = 1\n+let value = 2\n*** End Patch"
+              const result = yield* execute({ patchText }, ctx)
+
+              expect(result.output).toContain("main.cj")
+              expect(yield* readText(target)).toBe("let value = 2\n")
+            }),
+          () =>
+            Effect.sync(() => {
+              Formatter.cjfmt.extensions = original.extensions
+              Formatter.cjfmt.enabled = original.enabled
+            }),
+        )
+      }),
+    { config: { formatter: { cjfmt: {} }, lsp: false } },
   )
 
   it.instance("moves file to a new directory", () =>
