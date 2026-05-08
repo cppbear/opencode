@@ -7,6 +7,9 @@ import { which } from "@/util/which"
 export interface LocatedCangjieTool {
   bin: string
   root?: string
+  home?: string
+  envsetup?: string
+  runtimeDir?: string
   env: Record<string, string>
   source: "path" | "env" | "default"
 }
@@ -54,6 +57,21 @@ function inferRootFromBin(bin: string) {
   return undefined
 }
 
+function inferHomeFromBin(bin: string) {
+  const normalized = path.normalize(bin)
+  for (const marker of [path.join("build-tools", "tools", "bin"), path.join("build-tools", "bin")]) {
+    const suffix = path.sep + marker + path.sep
+    const index = normalized.lastIndexOf(suffix)
+    if (index > 0) return path.join(normalized.slice(0, index), "build-tools")
+  }
+  for (const marker of [path.join("tools", "bin"), "bin"]) {
+    const suffix = path.sep + marker + path.sep
+    const index = normalized.lastIndexOf(suffix)
+    if (index > 0) return normalized.slice(0, index)
+  }
+  return undefined
+}
+
 function candidateNames(name: string) {
   if (process.platform === "win32" && !name.endsWith(".exe")) return [name, `${name}.exe`]
   return [name]
@@ -69,19 +87,77 @@ function candidatesUnderRoot(root: string, name: string) {
   return rels.flatMap((rel) => candidateNames(name).map((tool) => path.join(root, rel, tool)))
 }
 
-function buildEnv(root: string | undefined, bin: string, base: NodeJS.ProcessEnv = process.env) {
-  const currentPath = base.PATH ?? base.Path ?? ""
-  const pathEntries = [path.dirname(bin)]
-  if (root) {
-    pathEntries.push(
-      path.join(root, "build-tools", "tools", "bin"),
-      path.join(root, "build-tools", "bin"),
-      path.join(root, "tools", "bin"),
-      path.join(root, "bin"),
-    )
+function runtimeTarget() {
+  const arch = os.arch() === "arm64" ? "aarch64" : "x86_64"
+  if (process.platform === "darwin") return `darwin_${arch}_cjnative`
+  if (process.platform === "linux") return `linux_${arch}_cjnative`
+  if (process.platform === "win32") return "windows_x86_64_cjnative"
+  return undefined
+}
+
+function runtimeDir(home: string | undefined) {
+  const target = runtimeTarget()
+  if (!home || !target) return undefined
+  return path.join(home, "runtime", "lib", target)
+}
+
+function stringifyEnv(base: NodeJS.ProcessEnv) {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(base)) {
+    if (typeof value === "string") env[key] = value
   }
+  return env
+}
+
+function buildEnv(home: string | undefined, bin: string, base: NodeJS.ProcessEnv = process.env) {
+  const env = stringifyEnv(base)
+  const pathEntries = [path.dirname(bin)]
+  if (home) {
+    pathEntries.push(path.join(home, "tools", "bin"), path.join(home, "bin"))
+    env.CANGJIE_HOME = home
+  }
+  env.PATH = unique([...pathEntries, env.PATH, env.Path]).join(path.delimiter)
+
+  const runtime = runtimeDir(home)
+  if (runtime) {
+    const nativeLibs = [runtime, home && path.join(home, "tools", "lib")]
+    if (process.platform === "darwin") {
+      env.DYLD_LIBRARY_PATH = unique([...nativeLibs, env.DYLD_LIBRARY_PATH]).join(path.delimiter)
+    } else if (process.platform === "linux") {
+      env.LD_LIBRARY_PATH = unique([...nativeLibs, env.LD_LIBRARY_PATH]).join(path.delimiter)
+    } else if (process.platform === "win32") {
+      env.PATH = unique([...nativeLibs, env.PATH]).join(path.delimiter)
+    }
+  }
+  return env
+}
+
+async function resolveHome(root: string | undefined, bin: string) {
+  const candidates = unique([inferHomeFromBin(bin), root && path.join(root, "build-tools"), root])
+  for (const candidate of candidates) {
+    if (
+      (await Filesystem.exists(path.join(candidate, "modules"))) ||
+      (await Filesystem.exists(path.join(candidate, "envsetup.sh")))
+    ) {
+      return candidate
+    }
+  }
+  return candidates[0]
+}
+
+async function locate(bin: string, source: LocatedCangjieTool["source"], root = inferRootFromBin(bin)) {
+  const home = await resolveHome(root, bin)
+  const envsetup = home ? path.join(home, "envsetup.sh") : undefined
+  const resolvedEnvsetup = envsetup && (await Filesystem.exists(envsetup)) ? envsetup : undefined
+  const resolvedRuntimeDir = runtimeDir(home)
   return {
-    PATH: unique([...pathEntries, currentPath]).join(path.delimiter),
+    bin,
+    root,
+    home,
+    envsetup: resolvedEnvsetup,
+    runtimeDir: resolvedRuntimeDir,
+    env: buildEnv(home, bin),
+    source,
   }
 }
 
@@ -89,8 +165,7 @@ export async function findCangjieTool(name: string): Promise<LocatedCangjieTool 
   for (const candidateName of candidateNames(name)) {
     const match = which(candidateName)
     if (match) {
-      const root = inferRootFromBin(match)
-      return { bin: match, root, env: buildEnv(root, match), source: "path" }
+      return locate(match, "path")
     }
   }
 
@@ -98,7 +173,7 @@ export async function findCangjieTool(name: string): Promise<LocatedCangjieTool 
   for (const root of envRoots) {
     for (const candidate of candidatesUnderRoot(root, name)) {
       if (await Filesystem.exists(candidate)) {
-        return { bin: candidate, root, env: buildEnv(root, candidate), source: "env" }
+        return locate(candidate, "env", root)
       }
     }
   }
@@ -106,7 +181,7 @@ export async function findCangjieTool(name: string): Promise<LocatedCangjieTool 
   for (const root of await defaultRoots()) {
     for (const candidate of candidatesUnderRoot(root, name)) {
       if (await Filesystem.exists(candidate)) {
-        return { bin: candidate, root, env: buildEnv(root, candidate), source: "default" }
+        return locate(candidate, "default", root)
       }
     }
   }

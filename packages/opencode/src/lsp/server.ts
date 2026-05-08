@@ -2081,6 +2081,9 @@ export const Cangjie: Info = {
       bin: match.bin,
       source: match.source,
       root: match.root,
+      home: match.home,
+      envsetup: match.envsetup,
+      runtimeDir: match.runtimeDir,
       workspace: root,
     })
 
@@ -2093,6 +2096,9 @@ export const Cangjie: Info = {
     })
     return {
       process: proc,
+      initialization: {
+        modulesHomeOption: match.home,
+      },
     }
   },
 }
