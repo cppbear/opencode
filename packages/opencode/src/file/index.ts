@@ -203,6 +203,7 @@ const image = new Set([
 ])
 
 const text = new Set([
+  "cj",
   "ts",
   "tsx",
   "mts",

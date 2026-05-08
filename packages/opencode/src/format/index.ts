@@ -43,7 +43,16 @@ export const layer = Layer.effect(
         async function getCommand(item: Formatter.Info) {
           let cmd = commands[item.name]
           if (cmd === false || cmd === undefined) {
-            cmd = await item.enabled(ctx)
+            const next = await item.enabled(ctx)
+            if (next !== false && !Array.isArray(next)) {
+              log.error("formatter returned invalid command", {
+                name: item.name,
+                command: next,
+              })
+              cmd = false
+            } else {
+              cmd = next
+            }
             commands[item.name] = cmd
           }
           return cmd
@@ -70,7 +79,7 @@ export const layer = Layer.effect(
             }),
           )
           return checks
-            .filter((x): x is { item: Formatter.Info; cmd: string[] } => x.cmd !== false)
+            .filter((x): x is { item: Formatter.Info; cmd: string[] } => Array.isArray(x.cmd))
             .map((x) => ({ item: x.item, cmd: x.cmd }))
         }
 

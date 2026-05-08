@@ -13,6 +13,7 @@ import { Bus } from "../../src/bus"
 import { Truncate } from "@/tool/truncate"
 import { tmpdir } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
+import * as Formatter from "../../src/format/formatter"
 
 const runtime = ManagedRuntime.make(
   Layer.mergeAll(
@@ -264,6 +265,45 @@ describe("tool.apply_patch freeform", () => {
         expect(contents).toBe("first line\nsecond line\n")
       },
     })
+  })
+
+  test("applies .cj patch when formatter command result is invalid", async () => {
+    await using fixture = await tmpdir({
+      config: {
+        formatter: {
+          cjfmt: {},
+        },
+        lsp: false,
+      },
+    })
+    const { ctx } = makeCtx()
+    const original = {
+      extensions: Formatter.cjfmt.extensions,
+      enabled: Formatter.cjfmt.enabled,
+    }
+
+    Formatter.cjfmt.extensions = [".cj"]
+    Formatter.cjfmt.enabled = async () => undefined as any
+
+    try {
+      await WithInstance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const target = path.join(fixture.path, "main.cj")
+          await fs.writeFile(target, "let value = 1\n", "utf-8")
+
+          const patchText = "*** Begin Patch\n*** Update File: main.cj\n@@\n-let value = 1\n+let value = 2\n*** End Patch"
+
+          const result = await execute({ patchText }, ctx)
+
+          expect(result.output).toContain("main.cj")
+          expect(await fs.readFile(target, "utf-8")).toBe("let value = 2\n")
+        },
+      })
+    } finally {
+      Formatter.cjfmt.extensions = original.extensions
+      Formatter.cjfmt.enabled = original.enabled
+    }
   })
 
   test("moves file to a new directory", async () => {

@@ -144,6 +144,47 @@ describe("Format", () => {
     ),
   )
 
+  it.live("file() skips invalid formatter command results", () =>
+    provideTmpdirInstance(
+      (path) =>
+        Effect.gen(function* () {
+          const file = `${path}/test.invalid-command`
+          yield* Effect.promise(() => Bun.write(file, "x"))
+
+          const original = {
+            extensions: Formatter.gofmt.extensions,
+            enabled: Formatter.gofmt.enabled,
+          }
+
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => {
+              Formatter.gofmt.extensions = [".invalid-command"]
+              Formatter.gofmt.enabled = async () => undefined as any
+            }),
+            () =>
+              Format.Service.use((fmt) =>
+                Effect.gen(function* () {
+                  yield* fmt.init()
+                  expect(yield* fmt.file(file)).toBe(false)
+                }),
+              ),
+            () =>
+              Effect.sync(() => {
+                Formatter.gofmt.extensions = original.extensions
+                Formatter.gofmt.enabled = original.enabled
+              }),
+          )
+        }),
+      {
+        config: {
+          formatter: {
+            gofmt: {},
+          },
+        },
+      },
+    ),
+  )
+
   it.live("status() initializes formatter state per directory", () =>
     Effect.gen(function* () {
       const a = yield* provideTmpdirInstance(() => Format.Service.use((fmt) => fmt.status()), {

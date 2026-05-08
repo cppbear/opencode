@@ -14,6 +14,7 @@ import { which } from "../util/which"
 import { Module } from "@opencode-ai/core/util/module"
 import { spawn } from "./launch"
 import { Npm } from "@opencode-ai/core/npm"
+import { findCangjieTool } from "@/cangjie/toolchain"
 
 const log = Log.create({ service: "lsp.server" })
 const pathExists = async (p: string) =>
@@ -2059,6 +2060,39 @@ export const JuliaLS: Info = {
       process: spawn(julia, ["--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"], {
         cwd: root,
       }),
+    }
+  },
+}
+
+export const Cangjie: Info = {
+  id: "cangjie",
+  extensions: [".cj"],
+  root: NearestRoot(["cjpm.toml"]),
+  async spawn(root) {
+    const match = await findCangjieTool("LSPServer")
+    if (!match) {
+      log.info("Cangjie LSPServer not found", {
+        searched: ["PATH", "CANGJIE_HOME", "CANGJIE_SDK_HOME", "~/.cangjie-sdk/*/cangjie", "~/.local/cangjie"],
+      })
+      return
+    }
+
+    log.info("selected Cangjie LSPServer", {
+      bin: match.bin,
+      source: match.source,
+      root: match.root,
+      workspace: root,
+    })
+
+    const proc = spawn(match.bin, ["--stdio"], {
+      cwd: root,
+      env: match.env,
+    })
+    proc.on("error", (err) => {
+      log.error("Failed to start Cangjie LSPServer", { error: err.message, bin: match.bin })
+    })
+    return {
+      process: proc,
     }
   },
 }
